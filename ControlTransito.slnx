@@ -1,0 +1,7 @@
+<Solution>
+  <Project Path="ApiIngesta/ApiIngesta.csproj" />
+  <Project Path="ApiMultas/ApiMultas.csproj" />
+  <Project Path="ClienteCamara/ClienteCamara.csproj" />
+  <Project Path="PortalCiudadano/PortalCiudadano.csproj" />
+  <Project Path="Shared.Contracts/Shared.Contracts.csproj" />
+</Solution>
