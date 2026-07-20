@@ -1,4 +1,8 @@
 @ApiIngesta_HostAddress = https://localhost:7036
+@ApiMultas_HostAddress = https://localhost:7035
+
+###
+# Crear infracción
 
 POST {{ApiIngesta_HostAddress}}/api/infracciones
 Content-Type: application/json
@@ -9,5 +13,19 @@ Content-Type: application/json
   "limiteVelocidad": 50,
   "fechaDeteccion": "2026-07-19T20:00:00Z"
 }
+
+###
+
+# Consultar todas las multas
+
+GET {{ApiMultas_HostAddress}}/api/multas
+Accept: application/json
+
+###
+
+# Consultar multas por placa
+
+GET {{ApiMultas_HostAddress}}/api/multas/ABC1224
+Accept: application/json
 
 ###
