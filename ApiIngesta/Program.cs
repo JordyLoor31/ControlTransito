@@ -1,8 +1,12 @@
 using ApiIngesta.Data;
+using ApiIngesta.Services;
+using Azure.Messaging.ServiceBus;
 using Microsoft.EntityFrameworkCore;
 
 var builder = WebApplication.CreateBuilder(args);
 
+builder.Services.AddControllers();
+builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddOpenApi();
 
 builder.Services.AddDbContext<AppDbContext>(options =>
@@ -11,7 +15,11 @@ builder.Services.AddDbContext<AppDbContext>(options =>
         builder.Configuration.GetConnectionString("transitodb"));
 });
 
-builder.Services.AddControllers();
+builder.Services.AddSingleton<ServiceBusClient>(
+    sp => new ServiceBusClient(
+        builder.Configuration.GetConnectionString("servicebus")!));
+
+builder.Services.AddScoped<ServiceBusProducer>();
 
 var app = builder.Build();
 

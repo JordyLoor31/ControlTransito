@@ -1,6 +1,13 @@
-@ApiIngesta_HostAddress = http://localhost:5250
+@ApiIngesta_HostAddress = https://localhost:7036
 
-GET {{ApiIngesta_HostAddress}}/weatherforecast/
-Accept: application/json
+POST {{ApiIngesta_HostAddress}}/api/infracciones
+Content-Type: application/json
+
+{
+  "placa": "MBC1234",
+  "velocidad": 95,
+  "limiteVelocidad": 50,
+  "fechaDeteccion": "2026-07-19T20:00:00Z"
+}
 
 ###
