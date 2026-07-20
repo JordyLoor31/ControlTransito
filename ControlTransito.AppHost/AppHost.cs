@@ -4,9 +4,14 @@ var serviceBus = builder
     .AddAzureServiceBus("servicebus")
     .RunAsEmulator();
 
+serviceBus.AddServiceBusQueue(
+    "infracciones-velocidad",
+    "infracciones-velocidad");
+
 var postgres = builder
     .AddPostgres("postgres")
-    .WithLifetime(ContainerLifetime.Persistent);
+    .WithLifetime(ContainerLifetime.Persistent)
+    .WithPgAdmin(o => o.WithHostPort(5555));
 
 var db = postgres.AddDatabase("transitodb");
 
