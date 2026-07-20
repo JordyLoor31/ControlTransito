@@ -42,6 +42,40 @@ public class InfraccionesConsumer : BackgroundService
 
             if (evento is null)
             {
+                Console.WriteLine(
+                    $"MENSAJE ENVIADO A DLQ: {body}");
+
+                await args.DeadLetterMessageAsync(
+                    args.Message,
+                    "JSON_INVALIDO",
+                    "No se pudo deserializar el mensaje");
+
+                return;
+            }
+
+            if (string.IsNullOrWhiteSpace(evento.Placa))
+            {
+                Console.WriteLine(
+                    $"MENSAJE ENVIADO A DLQ: {body}");
+
+                await args.DeadLetterMessageAsync(
+                    args.Message,
+                    "PLACA_INVALIDA",
+                    "La placa está vacía");
+
+                return;
+            }
+
+            if (evento.Velocidad <= 0)
+            {
+                Console.WriteLine(
+                    $"MENSAJE ENVIADO A DLQ: {body}");
+
+                await args.DeadLetterMessageAsync(
+                    args.Message,
+                    "VELOCIDAD_INVALIDA",
+                    "La velocidad debe ser mayor que cero");
+
                 return;
             }
 

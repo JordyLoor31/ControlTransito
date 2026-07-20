@@ -2,8 +2,8 @@ POST https://localhost:7036/api/infracciones
 Content-Type: application/json
 
 {
-  "placa": "ABC1224",
-  "velocidad": 95,
+  "placa": "",
+  "velocidad": -10,
   "limiteVelocidad": 50,
   "fechaDeteccion": "2026-07-20T00:00:00Z"
 }
