@@ -1,4 +1,6 @@
 using ApiMultas.Data;
+using ApiMultas.Services;
+using Azure.Messaging.ServiceBus;
 using Microsoft.EntityFrameworkCore;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -10,6 +12,12 @@ builder.Services.AddDbContext<AppDbContext>(options =>
     options.UseNpgsql(
         builder.Configuration.GetConnectionString("transitodb"));
 });
+
+builder.Services.AddSingleton<ServiceBusClient>(
+    sp => new ServiceBusClient(
+        builder.Configuration.GetConnectionString("servicebus")!));
+
+builder.Services.AddHostedService<InfraccionesConsumer>();
 
 builder.Services.AddControllers();
 

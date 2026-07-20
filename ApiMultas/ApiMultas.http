@@ -1,6 +1,9 @@
-@ApiMultas_HostAddress = http://localhost:5252
+POST https://localhost:7036/api/infracciones
+Content-Type: application/json
 
-GET {{ApiMultas_HostAddress}}/weatherforecast/
-Accept: application/json
-
-###
+{
+  "placa": "ABC1234",
+  "velocidad": 95,
+  "limiteVelocidad": 50,
+  "fechaDeteccion": "2026-07-20T00:00:00Z"
+}

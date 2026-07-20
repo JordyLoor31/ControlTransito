@@ -13,10 +13,15 @@ public class ServiceBusProducer
 
     public async Task SendAsync(string json)
     {
+        Console.WriteLine("ENVIANDO MENSAJE...");
+        Console.WriteLine(json);
+
         var sender = _client.CreateSender(
             "infracciones-velocidad");
 
         await sender.SendMessageAsync(
             new ServiceBusMessage(json));
+
+        Console.WriteLine("MENSAJE ENVIADO CORRECTAMENTE");
     }
 }
