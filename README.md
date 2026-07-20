@@ -2,23 +2,23 @@
 
 ## Autores
 
-ALCIVAR CORDOBA PEDRO LUIS
-CEDEÑO RODRIGUEZ CARLOS LUIS
-LOOR VERA JORDY LENIN
-RODRIGUEZ SALVATIERRA ENIS ANDERI
-VALENCIA RAMIREZ JHON ROBERT
+- ALCIVAR CORDOBA PEDRO LUIS
+- CEDEÑO RODRIGUEZ CARLOS LUIS
+- LOOR VERA JORDY LENIN
+- RODRIGUEZ SALVATIERRA ENIS ANDERI
+- VALENCIA RAMIREZ JHON ROBERT
 
 ---
 
-# Descripción del Proyecto
+## Descripción del proyecto
 
-Este proyecto implementa un sistema distribuido para la gestión de infracciones de tránsito utilizando una arquitectura basada en eventos.
+Este proyecto implementa un sistema distribuido para la gestión de infracciones de tránsito usando una arquitectura basada en eventos.
 
-El sistema permite registrar infracciones detectadas por cámaras, enviarlas mediante Azure Service Bus, generar multas automáticamente y aplicar mecanismos de resiliencia para evitar pérdida de información cuando existen fallos en la comunicación.
+Permite registrar infracciones detectadas por cámaras, enviarlas mediante Azure Service Bus, generar multas automáticamente y aplicar mecanismos de resiliencia para evitar la pérdida de información cuando hay fallos en la comunicación.
 
 ---
 
-# Objetivos
+## Objetivos
 
 - Registrar infracciones de tránsito.
 - Procesar eventos de forma asíncrona.
@@ -29,73 +29,51 @@ El sistema permite registrar infracciones detectadas por cámaras, enviarlas med
 
 ---
 
-# Arquitectura General
+## Arquitectura general
 
-ClienteCamara
+```mermaid
+flowchart LR
+    A[ClienteCamara] --> B[ApiIngesta]
+    B --> C[(PostgreSQL Infracciones)]
+    B --> D[Azure Service Bus]
+    D --> E[ApiMultas]
+    E --> F[(PostgreSQL Multas)]
+    G[PortalCiudadano] --> E
+```
 
-↓
+## Flujo principal
 
-ApiIngesta
-
-↓
-
-PostgreSQL (Infracciones)
-
-↓
-
-Azure Service Bus
-
-↓
-
-ApiMultas
-
-↓
-
-PostgreSQL (Multas)
-
-↓
-
-PortalCiudadano
+1. La cámara o cliente envía una infracción a ApiIngesta.
+2. ApiIngesta guarda la infracción en PostgreSQL.
+3. Publica un evento en Azure Service Bus.
+4. ApiMultas consume el evento y genera la multa.
+5. La multa queda registrada en PostgreSQL.
+6. PortalCiudadano puede consultarla por placa.
 
 ---
 
-# Arquitectura de Resiliencia
+## Arquitectura de resiliencia
 
-ApiIngesta
+```mermaid
+flowchart TD
+    A[ApiIngesta] --> B{Service Bus disponible?}
+    B -- Si --> C[Enviar mensaje]
+    B -- No --> D[Guardar en MensajesPendientes]
+    D --> E[Worker de reintento]
+    E --> C
+```
 
-↓
+## Arquitectura DLQ
 
-Service Bus caído
-
-↓
-
-MensajesPendientes
-
-↓
-
-Worker de Reintento
-
-↓
-
-Reenvío Automático
-
----
-
-# Arquitectura DLQ
-
-Mensaje Inválido
-
-↓
-
-Validación
-
-↓
-
-Dead Letter Queue (DLQ)
+```mermaid
+flowchart TD
+    A[Mensaje inválido] --> B[Validación]
+    B --> C[Dead Letter Queue]
+```
 
 ---
 
-# Tecnologías Utilizadas
+## Tecnologías utilizadas
 
 - .NET 10
 - ASP.NET Core
@@ -108,11 +86,10 @@ Dead Letter Queue (DLQ)
 
 ---
 
-# Estructura de la Solución
+## Estructura de la solución
 
 ```text
 ControlTransito
-│
 ├── ApiIngesta
 ├── ApiMultas
 ├── ClienteCamara
@@ -121,25 +98,27 @@ ControlTransito
 └── ControlTransito.AppHost
 ```
 
-# Shared.Contracts
+---
 
-Proyecto compartido que contiene los contratos utilizados entre los microservicios.
+## Shared.Contracts
 
-Evento utilizado:
+Proyecto compartido con los contratos usados entre los microservicios.
+
+Evento principal:
 
 ```csharp
 InfraccionDetectadaEvent
 ```
 
-Este contrato permite que ApiIngesta y ApiMultas intercambien información utilizando el mismo formato.
+Este contrato permite que ApiIngesta y ApiMultas intercambien información con el mismo formato.
 
 ---
 
-# ApiIngesta
+## ApiIngesta
 
 Responsable de recibir y almacenar las infracciones.
 
-Funciones principales:
+### Funciones principales
 
 - Recibir infracciones.
 - Guardar infracciones en PostgreSQL.
@@ -165,9 +144,9 @@ POST /api/infracciones
 
 ---
 
-# Azure Service Bus
+## Azure Service Bus
 
-Se utiliza para desacoplar los servicios.
+Se utiliza para desacoplar los servicios y mantener el flujo asíncrono.
 
 Cola utilizada:
 
@@ -175,52 +154,38 @@ Cola utilizada:
 infracciones-velocidad
 ```
 
-Flujo:
+### Flujo
 
 ```text
-ApiIngesta
-      ↓
-Azure Service Bus
-      ↓
-ApiMultas
+ApiIngesta -> Azure Service Bus -> ApiMultas
 ```
 
 ---
 
-# ApiMultas
+## ApiMultas
 
 Responsable de consumir eventos y generar multas.
 
-Funciones principales:
+### Funciones principales
 
 - Escuchar la cola de eventos.
 - Validar mensajes.
 - Crear multas automáticamente.
 - Gestionar la Dead Letter Queue.
 
-El consumidor fue implementado utilizando:
+Se implementa con un BackgroundService.
 
-```csharp
-BackgroundService
-```
-
-Proceso:
+### Proceso
 
 ```text
-Mensaje recibido
-      ↓
-Validación
-      ↓
-Creación de multa
-      ↓
-Guardar en PostgreSQL
+Mensaje recibido -> Validación -> Creación de multa -> Guardar en PostgreSQL
 ```
 
 ---
 
-# Base de Datos
+## Base de datos
 
-## Tabla Infracciones
+### Tabla Infracciones
 
 Registra las infracciones recibidas.
 
@@ -234,9 +199,7 @@ LimiteVelocidad
 FechaDeteccion
 ```
 
----
-
-## Tabla Multas
+### Tabla Multas
 
 Registra las multas generadas.
 
@@ -250,9 +213,7 @@ FechaEmision
 Pagada
 ```
 
----
-
-## Tabla MensajesPendientes
+### Tabla MensajesPendientes
 
 Almacena mensajes cuando el broker de mensajería no está disponible.
 
@@ -267,57 +228,33 @@ Procesado
 
 ---
 
-# Resiliencia
+## Resiliencia
 
-## Problema
+### Problema
 
 Cuando Azure Service Bus está apagado, el mensaje no puede enviarse.
 
-Sin resiliencia:
+### Solución implementada
 
 ```text
-ApiIngesta
-      ↓
-Error
-      ↓
-Pérdida de información
-```
-
----
-
-## Solución Implementada
-
-```text
-ApiIngesta
-      ↓
-Intento de envío
-      ↓
-Error
-      ↓
-Guardar en MensajesPendientes
+ApiIngesta -> Intento de envío -> Error -> Guardar en MensajesPendientes
 ```
 
 De esta forma no se pierde información.
 
 ---
 
-# Worker de Reintento
+## Worker de reintento
 
 Se implementó un servicio en segundo plano encargado de reenviar automáticamente los mensajes pendientes.
 
-Proceso:
+### Proceso
 
 ```text
-Buscar mensajes pendientes
-      ↓
-Intentar reenviar
-      ↓
-Éxito
-      ↓
-Procesado = true
+Buscar mensajes pendientes -> Intentar reenviar -> Éxito -> Procesado = true
 ```
 
-Beneficios:
+### Beneficios
 
 - Recuperación automática.
 - No requiere intervención manual.
@@ -325,11 +262,11 @@ Beneficios:
 
 ---
 
-# Dead Letter Queue (DLQ)
+## Dead Letter Queue (DLQ)
 
-Se implementó para gestionar mensajes inválidos.
+Se implementó para manejar mensajes inválidos.
 
-Ejemplos:
+### Ejemplo
 
 ```json
 {
@@ -338,25 +275,19 @@ Ejemplos:
 }
 ```
 
-Validaciones:
+### Validaciones
 
 - Placa vacía.
 - Velocidad menor o igual a cero.
 - Mensajes corruptos o inválidos.
 
-Proceso:
+### Proceso
 
 ```text
-Mensaje inválido
-      ↓
-Validación
-      ↓
-DeadLetterMessageAsync()
-      ↓
-DLQ
+Mensaje inválido -> Validación -> DeadLetterMessageAsync() -> DLQ
 ```
 
-Beneficios:
+### Beneficios
 
 - Evita ciclos infinitos de reprocesamiento.
 - Facilita auditoría y monitoreo.
@@ -364,7 +295,7 @@ Beneficios:
 
 ---
 
-# PortalCiudadano
+## PortalCiudadano
 
 Permite consultar las multas generadas.
 
@@ -380,13 +311,13 @@ GET /api/multas
 GET /api/multas/{placa}
 ```
 
-Ejemplo:
+### Ejemplo
 
 ```http
 GET /api/multas/ABC1234
 ```
 
-Respuesta:
+### Respuesta
 
 ```json
 [
@@ -397,105 +328,3 @@ Respuesta:
   }
 ]
 ```
-
----
-
-# Casos de Prueba
-
-## Caso 1: Flujo Normal
-
-```text
-Crear infracción
-      ↓
-ApiIngesta
-      ↓
-Service Bus
-      ↓
-ApiMultas
-      ↓
-Multa creada
-```
-
-Resultado esperado:
-
-- Registro en Infracciones.
-- Registro en Multas.
-
----
-
-## Caso 2: Broker Caído
-
-```text
-Service Bus apagado
-      ↓
-Crear infracción
-      ↓
-MensajesPendientes
-```
-
-Resultado esperado:
-
-- Registro en MensajesPendientes.
-- No pérdida de información.
-
----
-
-## Caso 3: Recuperación Automática
-
-```text
-Service Bus encendido
-      ↓
-Worker detecta pendientes
-      ↓
-Reenvío
-      ↓
-Multa creada
-```
-
-Resultado esperado:
-
-- Procesado = true.
-- Registro en Multas.
-
----
-
-## Caso 4: Dead Letter Queue
-
-```text
-Mensaje inválido
-      ↓
-DLQ
-```
-
-Resultado esperado:
-
-- No se genera multa.
-- Se registra en la cola de errores.
-
----
-
-# Conclusiones
-
-El sistema implementa una arquitectura distribuida basada en eventos que permite procesar infracciones de tránsito de forma desacoplada y resiliente.
-
-Características implementadas:
-
-✅ Registro de infracciones
-
-✅ Comunicación asíncrona mediante Service Bus
-
-✅ Generación automática de multas
-
-✅ Persistencia de mensajes fallidos
-
-✅ Reenvío automático de mensajes
-
-✅ Dead Letter Queue (DLQ)
-
-✅ Consulta de multas por placa
-
-✅ Tolerancia a fallos del broker
-
-✅ Arquitectura basada en microservicios con Aspire
-
-El proyecto cumple los requisitos de procesamiento distribuido, resiliencia y tolerancia a fallos solicitados para el sistema de control de tránsito.
