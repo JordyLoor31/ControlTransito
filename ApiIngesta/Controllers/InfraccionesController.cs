@@ -44,7 +44,31 @@ public class InfraccionesController : ControllerBase
         var json =
             JsonSerializer.Serialize(evento);
 
-        await _producer.SendAsync(json);
+        try
+        {
+            await _producer.SendAsync(json);
+
+            Console.WriteLine(
+                "MENSAJE ENVIADO A SERVICE BUS");
+        }
+        catch (Exception ex)
+        {
+            var pendiente = new MensajePendiente
+            {
+                Id = Guid.NewGuid(),
+                Payload = json,
+                FechaCreacion = DateTime.UtcNow,
+                Procesado = false
+            };
+
+            _context.MensajesPendientes.Add(
+                pendiente);
+
+            await _context.SaveChangesAsync();
+
+            Console.WriteLine(
+                $"MENSAJE GUARDADO COMO PENDIENTE: {ex.Message}");
+        }
 
         return Ok(new
         {
@@ -52,4 +76,5 @@ public class InfraccionesController : ControllerBase
             infraccion.Id
         });
     }
+
 }

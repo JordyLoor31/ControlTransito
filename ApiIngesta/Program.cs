@@ -19,7 +19,9 @@ builder.Services.AddSingleton<ServiceBusClient>(
     sp => new ServiceBusClient(
         builder.Configuration.GetConnectionString("servicebus")!));
 
-builder.Services.AddScoped<ServiceBusProducer>();
+builder.Services.AddSingleton<ServiceBusProducer>();
+
+builder.Services.AddHostedService<ReintentoPendientesWorker>();
 
 var app = builder.Build();
 
