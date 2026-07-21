@@ -1,0 +1,5 @@
+@ClienteCamara_HostAddress = https://localhost:7068
+
+POST {{ClienteCamara_HostAddress}}/api/camara/simular
+
+###
