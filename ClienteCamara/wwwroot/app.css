@@ -58,3 +58,105 @@ h1:focus {
 .form-floating > .form-control-plaintext:focus::placeholder, .form-floating > .form-control:focus::placeholder {
     text-align: start;
 }
+
+/* Diagrama de flujo del sistema */
+.flow-strip {
+    display: flex;
+    align-items: stretch;
+    gap: 0.4rem;
+    flex-wrap: wrap;
+}
+
+.flow-node {
+    flex: 1 1 130px;
+    min-width: 130px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    text-align: center;
+    padding: 0.65rem 0.5rem;
+    border: 2px solid #dee2e6;
+    border-radius: 0.6rem;
+    background: #f8f9fa;
+    transition: all 0.3s ease;
+}
+
+.flow-node-on {
+    border-color: #1b6ec2;
+    background: #e7f1fb;
+    box-shadow: 0 0 0 3px rgba(27, 110, 194, 0.15);
+}
+
+.flow-node-dlq {
+    border-color: #ffc107;
+    background: #fff8e1;
+    box-shadow: 0 0 0 3px rgba(255, 193, 7, 0.25);
+}
+
+.flow-node-error {
+    border-color: #dc3545;
+    background: #fdecea;
+    box-shadow: 0 0 0 3px rgba(220, 53, 69, 0.2);
+}
+
+.flow-step {
+    width: 1.5rem;
+    height: 1.5rem;
+    line-height: 1.5rem;
+    border-radius: 50%;
+    background: #6c757d;
+    color: #fff;
+    font-size: 0.8rem;
+    font-weight: 700;
+    margin-bottom: 0.25rem;
+}
+
+.flow-node-on .flow-step {
+    background: #1b6ec2;
+}
+
+.flow-node-dlq .flow-step {
+    background: #b8860b;
+}
+
+.flow-node-error .flow-step {
+    background: #dc3545;
+}
+
+.flow-title {
+    font-weight: 700;
+    font-size: 0.95rem;
+}
+
+.flow-sub {
+    font-size: 0.75rem;
+    color: #6c757d;
+}
+
+.flow-arrow {
+    align-self: center;
+    width: 1.4rem;
+    height: 0;
+    border-top: 3px dashed #ced4da;
+    position: relative;
+    transition: border-color 0.3s ease;
+}
+
+.flow-arrow::after {
+    content: "";
+    position: absolute;
+    right: -2px;
+    top: -6px;
+    border: 5px solid transparent;
+    border-left-color: #ced4da;
+    transition: border-left-color 0.3s ease;
+}
+
+.flow-arrow-on {
+    border-top-color: #1b6ec2;
+}
+
+.flow-arrow-on::after {
+    border-left-color: #1b6ec2;
+}

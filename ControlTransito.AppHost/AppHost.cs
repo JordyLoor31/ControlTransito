@@ -15,16 +15,24 @@ var postgres = builder
 
 var db = postgres.AddDatabase("transitodb");
 
-builder.AddProject<Projects.ApiIngesta>("apiingesta")
+var apiIngesta = builder.AddProject<Projects.ApiIngesta>("apiingesta")
     .WithReference(serviceBus)
-    .WithReference(db);
+    .WithReference(db)
+    .WaitFor(serviceBus)
+    .WaitFor(db);
 
-builder.AddProject<Projects.ApiMultas>("apimultas")
+var apiMultas = builder.AddProject<Projects.ApiMultas>("apimultas")
     .WithReference(serviceBus)
-    .WithReference(db);
+    .WithReference(db)
+    .WaitFor(serviceBus)
+    .WaitFor(db);
 
-builder.AddProject<Projects.ClienteCamara>("clientecamara");
+builder.AddProject<Projects.ClienteCamara>("clientecamara")
+    .WithReference(apiIngesta)
+    .WaitFor(apiIngesta);
 
-builder.AddProject<Projects.PortalCiudadano>("portalciudadano");
+builder.AddProject<Projects.PortalCiudadano>("portalciudadano")
+    .WithReference(apiMultas)
+    .WaitFor(apiMultas);
 
 builder.Build().Run();

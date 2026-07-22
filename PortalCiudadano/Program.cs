@@ -6,6 +6,16 @@ var builder = WebApplication.CreateBuilder(args);
 builder.Services.AddRazorComponents()
     .AddInteractiveServerComponents();
 
+// URL inyectada por Aspire (WithReference); fallback al puerto de launchSettings
+builder.Services.AddHttpClient("ApiMultas", client =>
+{
+    var url = builder.Configuration["services:apimultas:https:0"]
+        ?? builder.Configuration["services:apimultas:http:0"]
+        ?? "https://localhost:7035";
+
+    client.BaseAddress = new Uri(url);
+});
+
 var app = builder.Build();
 
 // Configure the HTTP request pipeline.

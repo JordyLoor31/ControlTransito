@@ -113,8 +113,34 @@ public class InfraccionesConsumer : BackgroundService
             return Task.CompletedTask;
         };
 
-        await processor.StartProcessingAsync(
-            stoppingToken);
+        // Reintentar la conexión: el emulador de Service Bus puede tardar
+        // en estar listo y un fallo aquí apagaría toda la aplicación.
+        while (!stoppingToken.IsCancellationRequested)
+        {
+            try
+            {
+                await processor.StartProcessingAsync(
+                    stoppingToken);
+
+                Console.WriteLine(
+                    "CONSUMER CONECTADO A SERVICE BUS");
+
+                break;
+            }
+            catch (OperationCanceledException)
+            {
+                return;
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine(
+                    $"SERVICE BUS NO DISPONIBLE, REINTENTANDO: {ex.Message}");
+
+                await Task.Delay(
+                    TimeSpan.FromSeconds(5),
+                    stoppingToken);
+            }
+        }
 
         await Task.Delay(
             Timeout.Infinite,

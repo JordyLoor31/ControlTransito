@@ -1,7 +1,189 @@
 ﻿@page "/"
+@rendermode InteractiveServer
+@inject IHttpClientFactory HttpFactory
 
-<PageTitle>Home</PageTitle>
+<PageTitle>Portal Ciudadano</PageTitle>
 
-<h1>Hello, world!</h1>
+<h1 class="mb-1">Portal Ciudadano</h1>
+<p class="text-muted">
+    Consulta las multas de tránsito generadas por el sistema. Busca por placa o revisa el listado completo.
+</p>
 
-Welcome to your new app.
+<div class="card shadow-sm mb-4">
+    <div class="card-body">
+        <div class="row g-2 align-items-end">
+            <div class="col-sm-6 col-md-5">
+                <label class="form-label">Placa del vehículo</label>
+                <input class="form-control text-uppercase" placeholder="Ej: ABC1234"
+                       @bind="placaBusqueda" @onkeydown="BuscarConEnter" />
+            </div>
+            <div class="col-auto">
+                <button class="btn btn-primary" disabled="@cargando" @onclick="BuscarPorPlaca">
+                    Buscar
+                </button>
+            </div>
+            <div class="col-auto">
+                <button class="btn btn-outline-secondary" disabled="@cargando" @onclick="CargarTodas">
+                    Ver todas
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+@if (error is not null)
+{
+    <div class="alert alert-danger py-2">@error</div>
+}
+
+@if (multas is not null)
+{
+    <div class="row g-3 mb-4">
+        <div class="col-sm-4">
+            <div class="card text-center shadow-sm">
+                <div class="card-body py-3">
+                    <div class="fs-3 fw-bold">@multas.Count</div>
+                    <div class="text-muted small">Multas encontradas</div>
+                </div>
+            </div>
+        </div>
+        <div class="col-sm-4">
+            <div class="card text-center shadow-sm border-danger">
+                <div class="card-body py-3">
+                    <div class="fs-3 fw-bold text-danger">
+                        $@multas.Where(m => !m.Pagada).Sum(m => m.Valor).ToString("N2")
+                    </div>
+                    <div class="text-muted small">Total pendiente de pago</div>
+                </div>
+            </div>
+        </div>
+        <div class="col-sm-4">
+            <div class="card text-center shadow-sm border-success">
+                <div class="card-body py-3">
+                    <div class="fs-3 fw-bold text-success">@multas.Count(m => m.Pagada)</div>
+                    <div class="text-muted small">Multas pagadas</div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="card shadow-sm">
+        <div class="card-header fw-bold d-flex justify-content-between align-items-center">
+            <span>@tituloResultados</span>
+            <button class="btn btn-sm btn-outline-secondary" disabled="@cargando" @onclick="Refrescar">
+                Actualizar
+            </button>
+        </div>
+        <div class="card-body p-0">
+            @if (multas.Count == 0)
+            {
+                <p class="text-muted p-3 mb-0">
+                    No se encontraron multas. Genera infracciones desde el simulador de cámara y vuelve a consultar.
+                </p>
+            }
+            else
+            {
+                <div class="table-responsive">
+                    <table class="table table-hover align-middle mb-0">
+                        <thead class="table-light">
+                            <tr>
+                                <th>Placa</th>
+                                <th>Valor</th>
+                                <th>Fecha de emisión</th>
+                                <th>Estado</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @foreach (var m in multas)
+                            {
+                                <tr>
+                                    <td class="fw-bold">@m.Placa</td>
+                                    <td>$@m.Valor.ToString("N2")</td>
+                                    <td>@m.FechaEmision.ToLocalTime().ToString("dd/MM/yyyy HH:mm:ss")</td>
+                                    <td>
+                                        @if (m.Pagada)
+                                        {
+                                            <span class="badge text-bg-success">Pagada</span>
+                                        }
+                                        else
+                                        {
+                                            <span class="badge text-bg-danger">Pendiente</span>
+                                        }
+                                    </td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+            }
+        </div>
+    </div>
+}
+else if (cargando)
+{
+    <div class="text-center py-4">
+        <div class="spinner-border text-primary" role="status"></div>
+    </div>
+}
+
+@code {
+    private string placaBusqueda = string.Empty;
+    private List<MultaDto>? multas;
+    private string tituloResultados = string.Empty;
+    private string? error;
+    private bool cargando;
+
+    private string? ultimaPlaca;
+
+    private record MultaDto(Guid Id, string Placa, decimal Valor, DateTime FechaEmision, bool Pagada);
+
+    protected override Task OnInitializedAsync() =>
+        CargarTodas();
+
+    private async Task BuscarConEnter(KeyboardEventArgs e)
+    {
+        if (e.Key == "Enter")
+            await BuscarPorPlaca();
+    }
+
+    private Task Refrescar() =>
+        ultimaPlaca is null ? CargarTodas() : Consultar(ultimaPlaca);
+
+    private Task CargarTodas() =>
+        Consultar(null);
+
+    private Task BuscarPorPlaca()
+    {
+        var placa = placaBusqueda.Trim().ToUpperInvariant();
+        return string.IsNullOrEmpty(placa) ? CargarTodas() : Consultar(placa);
+    }
+
+    private async Task Consultar(string? placa)
+    {
+        cargando = true;
+        error = null;
+        ultimaPlaca = placa;
+
+        try
+        {
+            var client = HttpFactory.CreateClient("ApiMultas");
+
+            var ruta = placa is null
+                ? "api/multas"
+                : $"api/multas/{Uri.EscapeDataString(placa)}";
+
+            multas = await client.GetFromJsonAsync<List<MultaDto>>(ruta) ?? new();
+
+            tituloResultados = placa is null
+                ? "Todas las multas"
+                : $"Multas de la placa {placa}";
+        }
+        catch (Exception ex)
+        {
+            multas = null;
+            error = $"No se pudo consultar ApiMultas: {ex.Message}";
+        }
+
+        cargando = false;
+    }
+}

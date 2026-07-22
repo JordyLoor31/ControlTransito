@@ -17,7 +17,7 @@ public class CamaraController : ControllerBase
     [HttpPost("simular")]
     public async Task<IActionResult> Simular()
     {
-        var client = _factory.CreateClient();
+        var client = _factory.CreateClient("ApiIngesta");
 
         var infraccion = new
         {
@@ -28,7 +28,7 @@ public class CamaraController : ControllerBase
         };
 
         await client.PostAsJsonAsync(
-            "https://localhost:7036/api/infracciones",
+            "api/infracciones",
             infraccion);
 
         return Ok(infraccion);

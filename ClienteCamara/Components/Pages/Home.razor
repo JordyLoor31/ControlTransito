@@ -1,7 +1,246 @@
 ﻿@page "/"
+@rendermode InteractiveServer
+@inject IHttpClientFactory HttpFactory
 
-<PageTitle>Home</PageTitle>
+<PageTitle>Cámara de Velocidad</PageTitle>
 
-<h1>Hello, world!</h1>
+<div class="d-flex align-items-center justify-content-between mb-1">
+    <h1 class="mb-0">Cámara de velocidad</h1>
+    <span class="badge text-bg-dark fs-6">CAM-01 · Av. Principal</span>
+</div>
+<p class="text-muted">
+    Simula la detección de un vehículo. La infracción viaja por todo el sistema:
+    se guarda en ApiIngesta, se publica en Azure Service Bus y ApiMultas genera la multa.
+</p>
 
-Welcome to your new app.
+<div class="flow-strip mb-4">
+    <div class="flow-node @NodoCss(1)">
+        <span class="flow-step">1</span>
+        <span class="flow-title">Cámara</span>
+        <span class="flow-sub">detecta vehículo</span>
+    </div>
+    <div class="flow-arrow @(etapa >= 2 ? "flow-arrow-on" : "")"></div>
+    <div class="flow-node @NodoCss(2)">
+        <span class="flow-step">2</span>
+        <span class="flow-title">ApiIngesta</span>
+        <span class="flow-sub">guarda en PostgreSQL</span>
+    </div>
+    <div class="flow-arrow @(etapa >= 3 ? "flow-arrow-on" : "")"></div>
+    <div class="flow-node @NodoCss(3)">
+        <span class="flow-step">3</span>
+        <span class="flow-title">Service Bus</span>
+        <span class="flow-sub">publica el evento</span>
+    </div>
+    <div class="flow-arrow @(etapa >= 4 ? "flow-arrow-on" : "")"></div>
+    <div class="flow-node @NodoCss(4)">
+        <span class="flow-step">4</span>
+        <span class="flow-title">ApiMultas</span>
+        <span class="flow-sub">@(etapaDlq ? "envía a la DLQ" : "genera la multa")</span>
+    </div>
+</div>
+
+@if (mensajeResultado is not null)
+{
+    <div class="alert @claseResultado py-2">@mensajeResultado</div>
+}
+
+<div class="row g-4">
+    <div class="col-lg-5">
+        <div class="card shadow-sm">
+            <div class="card-header fw-bold">Panel de detección</div>
+            <div class="card-body">
+                <div class="mb-3">
+                    <label class="form-label">Placa del vehículo</label>
+                    <input class="form-control text-uppercase" @bind="placa" maxlength="8" />
+                </div>
+
+                <div class="mb-1">
+                    <label class="form-label d-flex justify-content-between">
+                        <span>Velocidad detectada</span>
+                        <strong class="@(velocidad > LimiteVelocidad ? "text-danger" : "text-success")">
+                            @velocidad km/h
+                        </strong>
+                    </label>
+                    <input type="range" class="form-range" min="20" max="160" step="1" @bind="velocidad" @bind:event="oninput" />
+                </div>
+                <p class="text-muted small mb-3">Límite de la vía: @LimiteVelocidad km/h</p>
+
+                <div class="d-grid gap-2">
+                    <button class="btn btn-primary" disabled="@enviando" @onclick="EnviarInfraccion">
+                        Enviar infracción
+                    </button>
+                    <button class="btn btn-outline-primary" disabled="@enviando" @onclick="DetectarAleatorio">
+                        Detectar vehículo aleatorio
+                    </button>
+                    <button class="btn btn-outline-danger" disabled="@enviando" @onclick="EnviarInvalido"
+                            title="Envía placa vacía y velocidad negativa para probar la Dead Letter Queue">
+                        Enviar mensaje inválido (demo DLQ)
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="col-lg-7">
+        <div class="card shadow-sm">
+            <div class="card-header fw-bold">Historial de detecciones</div>
+            <div class="card-body p-0">
+                @if (historial.Count == 0)
+                {
+                    <p class="text-muted p-3 mb-0">Aún no se ha enviado ninguna infracción.</p>
+                }
+                else
+                {
+                    <div class="table-responsive">
+                        <table class="table table-hover align-middle mb-0">
+                            <thead class="table-light">
+                                <tr>
+                                    <th>Hora</th>
+                                    <th>Placa</th>
+                                    <th>Velocidad</th>
+                                    <th>Estado</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                @foreach (var r in historial)
+                                {
+                                    <tr>
+                                        <td>@r.Hora.ToString("HH:mm:ss")</td>
+                                        <td class="fw-bold">@(string.IsNullOrWhiteSpace(r.Placa) ? "(vacía)" : r.Placa)</td>
+                                        <td>@r.Velocidad km/h</td>
+                                        <td>
+                                            <span class="badge @BadgeCss(r.Estado)" title="@r.Detalle">@r.Estado</span>
+                                        </td>
+                                    </tr>
+                                }
+                            </tbody>
+                        </table>
+                    </div>
+                }
+            </div>
+        </div>
+    </div>
+</div>
+
+@code {
+    private const int LimiteVelocidad = 50;
+
+    private string placa = GenerarPlaca();
+    private int velocidad = 90;
+    private bool enviando;
+
+    private int etapa;
+    private bool etapaError;
+    private bool etapaDlq;
+
+    private string? mensajeResultado;
+    private string claseResultado = "alert-success";
+
+    private readonly List<Registro> historial = new();
+
+    private record Registro(DateTime Hora, string Placa, decimal Velocidad, string Estado, string Detalle);
+
+    private static string GenerarPlaca() =>
+        $"ABC{Random.Shared.Next(1000, 9999)}";
+
+    private Task EnviarInfraccion() =>
+        Enviar(placa, velocidad, invalido: false);
+
+    private Task DetectarAleatorio()
+    {
+        placa = GenerarPlaca();
+        velocidad = Random.Shared.Next(55, 140);
+        return Enviar(placa, velocidad, invalido: false);
+    }
+
+    private Task EnviarInvalido() =>
+        Enviar(string.Empty, -10, invalido: true);
+
+    private async Task Enviar(string placaEnvio, decimal velocidadEnvio, bool invalido)
+    {
+        enviando = true;
+        etapaError = false;
+        etapaDlq = invalido;
+        mensajeResultado = null;
+
+        etapa = 1;
+        StateHasChanged();
+        await Task.Delay(350);
+
+        var payload = new
+        {
+            placa = placaEnvio,
+            velocidad = velocidadEnvio,
+            limiteVelocidad = (decimal)LimiteVelocidad,
+            fechaDeteccion = DateTime.UtcNow
+        };
+
+        string estado;
+        string detalle;
+
+        try
+        {
+            etapa = 2;
+            StateHasChanged();
+
+            var client = HttpFactory.CreateClient("ApiIngesta");
+            var respuesta = await client.PostAsJsonAsync("api/infracciones", payload);
+            respuesta.EnsureSuccessStatusCode();
+
+            etapa = 3;
+            StateHasChanged();
+            await Task.Delay(350);
+
+            etapa = 4;
+            StateHasChanged();
+            await Task.Delay(350);
+
+            if (invalido)
+            {
+                estado = "DLQ";
+                detalle = "Mensaje inválido: ApiMultas lo rechaza y lo envía a la Dead Letter Queue.";
+                mensajeResultado = "Mensaje inválido enviado. ApiMultas lo rechazará y terminará en la Dead Letter Queue.";
+                claseResultado = "alert-warning";
+            }
+            else
+            {
+                estado = "Procesada";
+                detalle = "Infracción registrada. ApiMultas genera la multa automáticamente.";
+                mensajeResultado = $"Infracción de {placaEnvio} enviada. La multa aparecerá en el Portal Ciudadano.";
+                claseResultado = "alert-success";
+            }
+        }
+        catch (Exception ex)
+        {
+            etapaError = true;
+            estado = "Error";
+            detalle = ex.Message;
+            mensajeResultado = $"No se pudo contactar a ApiIngesta: {ex.Message}";
+            claseResultado = "alert-danger";
+        }
+
+        historial.Insert(0, new Registro(DateTime.Now, placaEnvio, velocidadEnvio, estado, detalle));
+        enviando = false;
+    }
+
+    private string NodoCss(int nodo)
+    {
+        if (etapa < nodo)
+            return string.Empty;
+
+        if (etapaError && nodo == etapa)
+            return "flow-node-error";
+
+        if (etapaDlq && nodo == 4 && etapa >= 4)
+            return "flow-node-dlq";
+
+        return "flow-node-on";
+    }
+
+    private static string BadgeCss(string estado) => estado switch
+    {
+        "Procesada" => "text-bg-success",
+        "DLQ" => "text-bg-warning",
+        _ => "text-bg-danger"
+    };
+}
