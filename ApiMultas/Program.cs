@@ -15,7 +15,17 @@ builder.Services.AddDbContext<AppDbContext>(options =>
 
 builder.Services.AddSingleton<ServiceBusClient>(
     sp => new ServiceBusClient(
-        builder.Configuration.GetConnectionString("servicebus")!));
+        builder.Configuration.GetConnectionString("servicebus")!,
+        new ServiceBusClientOptions
+        {
+            // Fallar rápido cuando el broker está caído: el consumidor
+            // ya reintenta la conexión en su propio bucle.
+            RetryOptions = new ServiceBusRetryOptions
+            {
+                TryTimeout = TimeSpan.FromSeconds(5),
+                MaxRetries = 1
+            }
+        }));
 
 builder.Services.AddHostedService<InfraccionesConsumer>();
 

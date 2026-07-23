@@ -1,5 +1,6 @@
 ﻿@page "/"
 @rendermode InteractiveServer
+@implements IDisposable
 @inject IHttpClientFactory HttpFactory
 
 <PageTitle>Cámara de Velocidad</PageTitle>
@@ -29,7 +30,7 @@
     <div class="flow-node @NodoCss(3)">
         <span class="flow-step">3</span>
         <span class="flow-title">Service Bus</span>
-        <span class="flow-sub">publica el evento</span>
+        <span class="flow-sub">@(etapaPendiente ? "caído: guardado como pendiente" : "publica el evento")</span>
     </div>
     <div class="flow-arrow @(etapa >= 4 ? "flow-arrow-on" : "")"></div>
     <div class="flow-node @NodoCss(4)">
@@ -38,6 +39,19 @@
         <span class="flow-sub">@(etapaDlq ? "envía a la DLQ" : "genera la multa")</span>
     </div>
 </div>
+
+@if (pendientesEnCola > 0)
+{
+    <div class="alert alert-warning py-2">
+        <div class="d-flex align-items-center gap-2">
+            <div class="spinner-border spinner-border-sm" role="status"></div>
+            <span>
+                <strong>@pendientesEnCola mensaje(s) en cola de pendientes.</strong>
+                El worker los reenviará automáticamente cuando Service Bus vuelva a estar disponible.
+            </span>
+        </div>
+    </div>
+}
 
 @if (mensajeResultado is not null)
 {
@@ -132,13 +146,29 @@
     private int etapa;
     private bool etapaError;
     private bool etapaDlq;
+    private bool etapaPendiente;
 
     private string? mensajeResultado;
     private string claseResultado = "alert-success";
 
+    private int pendientesEnCola;
+    private readonly CancellationTokenSource cts = new();
+
     private readonly List<Registro> historial = new();
 
-    private record Registro(DateTime Hora, string Placa, decimal Velocidad, string Estado, string Detalle);
+    private sealed class Registro
+    {
+        public required DateTime Hora { get; init; }
+        public required string Placa { get; init; }
+        public required decimal Velocidad { get; init; }
+        public required string Estado { get; set; }
+        public required string Detalle { get; set; }
+        public Guid? InfraccionId { get; init; }
+    }
+
+    private record RespuestaIngesta(string Mensaje, Guid Id, bool PublicadoEnBus);
+
+    private record PendienteDto(Guid Id, Guid? InfraccionId, DateTime FechaCreacion);
 
     private static string GenerarPlaca() =>
         $"ABC{Random.Shared.Next(1000, 9999)}";
@@ -161,6 +191,7 @@
         enviando = true;
         etapaError = false;
         etapaDlq = invalido;
+        etapaPendiente = false;
         mensajeResultado = null;
 
         etapa = 1;
@@ -177,6 +208,7 @@
 
         string estado;
         string detalle;
+        Guid? infraccionId = null;
 
         try
         {
@@ -187,27 +219,43 @@
             var respuesta = await client.PostAsJsonAsync("api/infracciones", payload);
             respuesta.EnsureSuccessStatusCode();
 
+            var resultado = await respuesta.Content
+                .ReadFromJsonAsync<RespuestaIngesta>();
+
+            infraccionId = resultado?.Id;
+
             etapa = 3;
             StateHasChanged();
             await Task.Delay(350);
 
-            etapa = 4;
-            StateHasChanged();
-            await Task.Delay(350);
-
-            if (invalido)
+            if (resultado is { PublicadoEnBus: false })
             {
-                estado = "DLQ";
-                detalle = "Mensaje inválido: ApiMultas lo rechaza y lo envía a la Dead Letter Queue.";
-                mensajeResultado = "Mensaje inválido enviado. ApiMultas lo rechazará y terminará en la Dead Letter Queue.";
+                etapaPendiente = true;
+                estado = "Pendiente";
+                detalle = "Service Bus no disponible: guardada en MensajesPendientes. El worker la reenviará automáticamente.";
+                mensajeResultado = "Service Bus no está disponible. La infracción quedó guardada como pendiente y el worker la reenviará automáticamente cuando el broker vuelva.";
                 claseResultado = "alert-warning";
             }
             else
             {
-                estado = "Procesada";
-                detalle = "Infracción registrada. ApiMultas genera la multa automáticamente.";
-                mensajeResultado = $"Infracción de {placaEnvio} enviada. La multa aparecerá en el Portal Ciudadano.";
-                claseResultado = "alert-success";
+                etapa = 4;
+                StateHasChanged();
+                await Task.Delay(350);
+
+                if (invalido)
+                {
+                    estado = "DLQ";
+                    detalle = "Mensaje inválido: ApiMultas lo rechaza y lo envía a la Dead Letter Queue.";
+                    mensajeResultado = "Mensaje inválido enviado. ApiMultas lo rechazará y terminará en la Dead Letter Queue.";
+                    claseResultado = "alert-warning";
+                }
+                else
+                {
+                    estado = "Procesada";
+                    detalle = "Infracción registrada. ApiMultas genera la multa automáticamente.";
+                    mensajeResultado = $"Infracción de {placaEnvio} enviada. La multa aparecerá en el Portal Ciudadano.";
+                    claseResultado = "alert-success";
+                }
             }
         }
         catch (Exception ex)
@@ -219,8 +267,88 @@
             claseResultado = "alert-danger";
         }
 
-        historial.Insert(0, new Registro(DateTime.Now, placaEnvio, velocidadEnvio, estado, detalle));
+        historial.Insert(0, new Registro
+        {
+            Hora = DateTime.Now,
+            Placa = placaEnvio,
+            Velocidad = velocidadEnvio,
+            Estado = estado,
+            Detalle = detalle,
+            InfraccionId = infraccionId
+        });
+
         enviando = false;
+    }
+
+    protected override void OnAfterRender(bool firstRender)
+    {
+        if (firstRender)
+            _ = MonitorearPendientes();
+    }
+
+    // Sondea la cola de pendientes: cuando el worker reenvía un mensaje
+    // (Service Bus reanudado), la fila pasa de Pendiente a Procesada.
+    private async Task MonitorearPendientes()
+    {
+        using var timer = new PeriodicTimer(TimeSpan.FromSeconds(3));
+
+        while (true)
+        {
+            try
+            {
+                await timer.WaitForNextTickAsync(cts.Token);
+
+                var client = HttpFactory.CreateClient("ApiIngesta");
+
+                var pendientes = await client.GetFromJsonAsync<List<PendienteDto>>(
+                    "api/infracciones/pendientes", cts.Token) ?? new();
+
+                var idsPendientes = pendientes
+                    .Where(p => p.InfraccionId is not null)
+                    .Select(p => p.InfraccionId!.Value)
+                    .ToHashSet();
+
+                var reanudadas = 0;
+
+                foreach (var r in historial.Where(r => r.Estado == "Pendiente"))
+                {
+                    if (r.InfraccionId is Guid id && !idsPendientes.Contains(id))
+                    {
+                        r.Estado = "Procesada";
+                        r.Detalle = "Reenviada por el worker al reanudarse Service Bus. ApiMultas generó la multa.";
+                        reanudadas++;
+                    }
+                }
+
+                if (reanudadas > 0)
+                {
+                    etapaPendiente = false;
+                    etapa = 4;
+                    mensajeResultado = $"Service Bus se reanudó: {reanudadas} mensaje(s) pendiente(s) reenviado(s) y multa(s) generada(s).";
+                    claseResultado = "alert-success";
+                }
+
+                if (pendientes.Count != pendientesEnCola || reanudadas > 0)
+                {
+                    pendientesEnCola = pendientes.Count;
+                    await InvokeAsync(StateHasChanged);
+                }
+            }
+            catch (OperationCanceledException)
+            {
+                return;
+            }
+            catch
+            {
+                // ApiIngesta puede estar reiniciando; se reintenta en el siguiente tick
+            }
+        }
+    }
+
+    public void Dispose()
+    {
+        cts.Cancel();
+        cts.Dispose();
     }
 
     private string NodoCss(int nodo)
@@ -230,6 +358,9 @@
 
         if (etapaError && nodo == etapa)
             return "flow-node-error";
+
+        if (etapaPendiente && nodo == 3)
+            return "flow-node-dlq";
 
         if (etapaDlq && nodo == 4 && etapa >= 4)
             return "flow-node-dlq";
@@ -241,6 +372,7 @@
     {
         "Procesada" => "text-bg-success",
         "DLQ" => "text-bg-warning",
+        "Pendiente" => "text-bg-warning",
         _ => "text-bg-danger"
     };
 }

@@ -2,6 +2,7 @@ using ApiIngesta.Data;
 using ApiIngesta.Models;
 using ApiIngesta.Services;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.EntityFrameworkCore;
 using Shared.Contracts;
 using System.Text.Json;
 
@@ -44,6 +45,8 @@ public class InfraccionesController : ControllerBase
         var json =
             JsonSerializer.Serialize(evento);
 
+        var publicadoEnBus = true;
+
         try
         {
             await _producer.SendAsync(json);
@@ -53,6 +56,8 @@ public class InfraccionesController : ControllerBase
         }
         catch (Exception ex)
         {
+            publicadoEnBus = false;
+
             var pendiente = new MensajePendiente
             {
                 Id = Guid.NewGuid(),
@@ -72,9 +77,45 @@ public class InfraccionesController : ControllerBase
 
         return Ok(new
         {
-            mensaje = "Infracción creada correctamente",
-            infraccion.Id
+            mensaje = publicadoEnBus
+                ? "Infracción creada correctamente"
+                : "Infracción creada; mensaje guardado como pendiente",
+            infraccion.Id,
+            publicadoEnBus
         });
+    }
+
+    [HttpGet("pendientes")]
+    public async Task<IActionResult> Pendientes()
+    {
+        var pendientes = await _context.MensajesPendientes
+            .Where(x => !x.Procesado)
+            .OrderBy(x => x.FechaCreacion)
+            .ToListAsync();
+
+        var resultado = pendientes.Select(p =>
+        {
+            Guid? infraccionId = null;
+
+            try
+            {
+                infraccionId = JsonSerializer
+                    .Deserialize<InfraccionDetectadaEvent>(p.Payload)?.Id;
+            }
+            catch (JsonException)
+            {
+                // Payload corrupto: se reporta sin id de infracción
+            }
+
+            return new
+            {
+                p.Id,
+                InfraccionId = infraccionId,
+                p.FechaCreacion
+            };
+        });
+
+        return Ok(resultado);
     }
 
 }
